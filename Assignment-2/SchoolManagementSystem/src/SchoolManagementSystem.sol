@@ -1,4 +1,4 @@
-// SPDX-License-Identifier: UNLICENSED
+// SPDX-License-Identifier: MIT
 pragma solidity ^0.8.13;
 
 
@@ -218,25 +218,25 @@ function setStaffActive(address staffAddr, bool isActive) external onlyOwner {
         staffs[staffAddr].salaryAmount = newSalary;
     }
 
-    function payStaff(address staffAddr) external onlyOwner nonReentrant {
-        Staff storage s = staffs[staffAddr];
-        require(s.isRegistered, "STAFF_NOT_FOUND");
-        require(s.isActive, "STAFF_INACTIVE");
+    // function payStaff(address staffAddr) external onlyOwner nonReentrant {
+    //     Staff storage s = staffs[staffAddr];
+    //     require(s.isRegistered, "STAFF_NOT_FOUND");
+    //     require(s.isActive, "STAFF_INACTIVE");
 
-        uint256 salary = s.salaryAmount;
-        require(salary > 0, "SALARY_ZERO");
+    //     uint256 salary = s.salaryAmount;
+    //     require(salary > 0, "SALARY_ZERO");
 
-        // Check if contract has enough token balance to pay salary
-        require(paymentToken.balanceOf(address(this)) >= salary, "TREASURY_LOW");
+    //     // Check if contract has enough token balance to pay salary
+    //     require(paymentToken.balanceOf(address(this)) >= salary, "TREASURY_LOW");
 
-        // Send tokens from contract -> staff
-        _safeTransfer(address(paymentToken), staffAddr, salary);
+    //     // Send tokens from contract -> staff
+    //     _safeTransfer(address(paymentToken), staffAddr, salary);
 
-        // Save last payment timestamp
-        s.lastPaidAt = block.timestamp;
+    //     // Save last payment timestamp
+    //     s.lastPaidAt = block.timestamp;
 
-        emit StaffPaid(staffAddr, salary, block.timestamp);
-    }
+    //     emit StaffPaid(staffAddr, salary, block.timestamp);
+    // }
 
     // Convenience: get one staff record
     function getStaff(address staffAddr) external view returns (Staff memory) {
@@ -302,5 +302,102 @@ function setStaffActive(address staffAddr, bool isActive) external onlyOwner {
         }
     }
     
+    event StudentRemoved(address indexed student, uint256 timestamp);
+
+
+
+
+function removeStudent(address student) external onlyOwner nonReentrant {
+    
+    require(students[student].isRegistered, "STUDENT_NOT_FOUND");
+
+    // delete mapping record
+    delete students[student];
+
+    // remove from index array (swap & pop)
+    _removeFromArray(studentIndex, student);
+
+    emit StudentRemoved(student, block.timestamp);
+}
+
+event StudentFeePaid(address indexed student, uint16 level, uint256 amount, uint256 timestamp);
+
+function payStudentFee() external nonReentrant {
+    Student storage s = students[msg.sender];
+    require(s.isRegistered, "NOT_REGISTERED");
+
+    uint256 fee = feeByLevel[s.level];
+    require(fee > 0, "FEE_NOT_SET");
+
+    _safeTransferFrom(address(paymentToken), msg.sender, address(this), fee);
+
+    s.status = FeePaymentStatus.Paid;
+    s.lastPaymentTime = block.timestamp;
+    s.totalPaid += fee;
+
+    emit StudentFeePaid(msg.sender, s.level, fee, block.timestamp);
+}
+event StaffEmployed(address indexed staff, uint256 salaryAmount, uint256 timestamp);
+
+function employStaff(
+    address staffAddr,
+    string calldata name,
+    string calldata role,
+    uint256 salaryAmount
+) external onlyOwner {
+    require(staffAddr != address(0), "STAFF_ZERO");
+    require(!staffs[staffAddr].isRegistered, "STAFF_EXISTS");
+    require(salaryAmount > 0, "SALARY_ZERO");
+
+    staffs[staffAddr] = Staff({
+        id: staffAddr,
+        name: name,
+        role: role,
+        salaryAmount: salaryAmount,
+        isActive: true,
+        lastPaidAt: 0,
+        isRegistered: true
+    });
+
+    staffIndex.push(staffAddr);
+    emit StaffEmployed(staffAddr, salaryAmount, block.timestamp);
+}
+event StaffStatusChanged(address indexed staff, bool isActive, uint256 timestamp);
+
+function suspendStaff(address staffAddr) external onlyOwner {
+    require(staffs[staffAddr].isRegistered, "STAFF_NOT_FOUND");
+    staffs[staffAddr].isActive = false;
+    emit StaffStatusChanged(staffAddr, false, block.timestamp);
+}
+
+function activateStaff(address staffAddr) external onlyOwner {
+    require(staffs[staffAddr].isRegistered, "STAFF_NOT_FOUND");
+    staffs[staffAddr].isActive = true;
+    emit StaffStatusChanged(staffAddr, true, block.timestamp);
+}
+function payStaff(address staffAddr) external onlyOwner nonReentrant {
+    Staff storage s = staffs[staffAddr];
+    require(s.isRegistered, "STAFF_NOT_FOUND");
+    require(s.isActive, "STAFF_SUSPENDED");
+
+    uint256 salary = s.salaryAmount;
+    require(paymentToken.balanceOf(address(this)) >= salary, "TREASURY_LOW");
+
+    _safeTransfer(address(paymentToken), staffAddr, salary);
+    s.lastPaidAt = block.timestamp;
+
+    emit StaffPaid(staffAddr, salary, block.timestamp);
+}
+    function _removeFromArray(address[] storage arr, address item) internal {
+    uint256 len = arr.length;
+    for (uint256 i = 0; i < len; i++) {
+        if (arr[i] == item) {
+            arr[i] = arr[len - 1];
+            arr.pop();
+            return;
+        }
+    }
+    revert("NOT_IN_LIST");
+}
     
     }
